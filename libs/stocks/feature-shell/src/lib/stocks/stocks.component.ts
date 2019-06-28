@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { PriceQueryFacade } from '@coding-challenge/stocks/data-access-price-query';
-import { debounceTime } from 'rxjs/operators';
+import { debounceTime, skipWhile, map } from 'rxjs/operators';
 
 @Component({
   selector: 'coding-challenge-stocks',
@@ -13,7 +13,13 @@ export class StocksComponent implements OnInit {
   symbol: string;
   period: string;
 
-  quotes$ = this.priceQuery.priceQueries$;
+  quotes$ = this.priceQuery.priceQueries$.pipe(map(data => {
+    const { fromDate, toDate } = this.stockPickerForm.value;
+    if(fromDate || toDate) {
+      return this.filterByDateRange(data);
+    }
+    return data;
+  }));
 
   timePeriods = [
     { viewValue: 'All available data', value: 'max' },
@@ -27,24 +33,65 @@ export class StocksComponent implements OnInit {
   ];
 
   constructor(private fb: FormBuilder, private priceQuery: PriceQueryFacade) {
-    this.stockPickerForm = fb.group({
+    this.stockPickerForm = this.fb.group({
       symbol: [null, Validators.required],
-      period: [null, Validators.required]
+      period: [null, Validators.required],
+      fromDate: [null],
+      toDate: [null]
     });
   }
 
   ngOnInit() {
-    this.stockPickerForm.controls.symbol.valueChanges.pipe(debounceTime(400)).subscribe(() => this.fetchQuote());
+    const { symbol, fromDate, toDate } = this.stockPickerForm.controls;
+    symbol.valueChanges.pipe(debounceTime(400)).subscribe(() => this.fetchQuote());
+    fromDate.valueChanges.subscribe(() => this.validateDate('fromDate'));
+    toDate.valueChanges.subscribe(() => this.validateDate('toDate'));
+    this.stockPickerForm.valueChanges.pipe(skipWhile(() => !fromDate.value || !toDate.value)).subscribe(() => this.compareDates());
   }
 
   fetchQuote() {
     if (this.stockPickerForm.valid) {
-      const { symbol, period } = this.stockPickerForm.value;
+      const { symbol, period, fromDate, toDate } = this.stockPickerForm.value;
       this.priceQuery.fetchQuote(symbol, period);
     }
   }
 
   selectTimePeriod() {
     this.fetchQuote();
+  }
+
+  private validateDate(control: string) {
+    const date = this.stockPickerForm.controls[control];
+    const currentDay = new Date();
+
+    if(date.value > currentDay) {
+      date.setValue(currentDay);
+    }
+    this.fetchQuote();
+  }
+
+  private compareDates() {
+    const { fromDate, toDate } = this.stockPickerForm.controls;
+
+    if(fromDate.value && toDate.value) {
+      if(fromDate.value > toDate.value) {
+        toDate.setValue(fromDate.value);
+      }
+    }
+  }
+
+  private filterByDateRange(items: any[]) {
+    const { fromDate, toDate } = this.stockPickerForm.value;
+    const filtered = items.filter(item => {
+      const date = new Date(item[0]);
+      if(fromDate && toDate) {
+        return date >= fromDate && date <= toDate;
+      } else if(fromDate) {
+        return date >= fromDate;
+      } else if(toDate) {
+        return date <= toDate;
+      }
+    });
+    return filtered;
   }
 }
