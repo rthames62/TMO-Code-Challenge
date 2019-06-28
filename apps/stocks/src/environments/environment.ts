@@ -8,7 +8,7 @@ import keys from "./keys";
 export const environment: StocksAppConfig = {
   production: false,
   apiKey: keys.apiKey,
-  apiURL: 'https://cloud.iexapis.com'
+  apiURL: 'http://localhost:3333'
 };
 
 /*
